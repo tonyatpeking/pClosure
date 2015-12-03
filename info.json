@@ -1,0 +1,13 @@
+{
+"name": "pClosureDemo",
+"version": "0.1.0",
+"title": "pClosureDemo",
+"author": "XiaoHong",
+"contact": "bedburrow@gmail.com",
+"homepage": "bedburrow.com",
+
+"description": "This is a mod demonstrating the pClosure (pseudo closure) class. It adds pseudo closure function behavior that persists across save/loads",
+
+"dependencies": [
+"base >= 0.12.17"]
+}
