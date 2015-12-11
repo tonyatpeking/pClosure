@@ -26,6 +26,7 @@ local function on_first_tick(key)
 end
 
 local function init()
+	pClosure.init()
 	pClosure1 = pClosure.new("Namespace1") --namespace is optional but you need to make sure you "save" functions into different names
 	pClosure2 = pClosure.new("Namespace2")
 end
@@ -36,16 +37,25 @@ local function on_gui_click(event)
 	local name = event.element.name
 	
 --------------EXAMPLES STARTS HERE--------------
-	local upval = 42
-	
+	local upval = {42,45}
+	local upval2 = 88
 	--the actual function with a closure/upvalue, saving this to global will not work when save/loading as the global serialization does not handle closures
 	local func = function (arg1)  
-		game.player.print( upval .. arg1 )
-		upval = upval + 1 --increment the upval so you can see how it behaves across save/loads, by default the upvalue that is changed in a function is not saved across save/loads, but there is a way around this, see last section
+		--local upval = upval 
+		--TODO: this line still causes env problems
+		game.player.print(tostring(pClosure2._pClosureProxy))
+		game.player.print( upval[1] .. ", ".. upval2 )
+		upval[1] = upval[1] + 1 
+		upval2 = upval2 + 1
+		--increment the upval so you can see how it behaves across save/loads, by default the upvalue that is changed in a function is not saved across save/loads, but there is a way around this, see last section
 	end
 	if name == "Save" then 
+
 		pClosure1.func = func
+		--pClosure2.func = func
+		
 		game.player.print( "func has been saved, you can save/load the game and see that Calling it still works" )
+		game.player.print(tostring(pClosure1._pClosureProxy))
 	end
 	if name == "Call" then 
 		pClosure1.func(" And I'm a argument")
@@ -56,14 +66,17 @@ local function on_gui_click(event)
 	end
 	if name == "SaveDiff" then
 		pClosure2.func = func
+		--pClosure1.func2 = func
 		game.player.print( "func saved to different namespace, delete the first one and this one will not be affected" )
 	end
 	if name == "CallDiff" then
 		pClosure2.func("And I'm a argument")
+		--pClosure1.func2("fun2")
+		--pClosure1.func2 = pClosure1.func2
 	end
 	--you can also change the upvalue after the function body, and it will save the new value
 	if name == "SaveUp" then
-		upval = 1000 --a different upvalue
+		upval = {1000,45} --a different upvalue
 		pClosure1.funcUp = func --notice that funcUp is named diffent from line 41, if not it will overwrite that function
 		game.player.print( "differnt upvalue saved" )
 	end
@@ -93,10 +106,10 @@ local function on_gui_click(event)
 		--local advancedFunc = function() upvalFunc() end
 		--instead write this:
 		local advancedFunc = function() 
-			local pClosure1 = global.pClosure.new("Namespace1") 
-			--pClosure1 cannot be called directly because it is an upvalue itself. We can use global.pClosure because The metatable for it is reset at each new() call, it's ugly but it works
+			--pClosure1.upvalFunc()
 			pClosure1.upvalFunc()
 		end
+
 		pClosure1.advancedFunc = advancedFunc
 	end
 	if name == "CallAdv" then

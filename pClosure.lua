@@ -17,20 +17,25 @@ Also upvalues are not saved if they have their value changed in the function, af
 --require module
 pClosure = require "pClosure"
 
-to initialize call the following in script.on_init AND script.on_load OR just call on the first tick of the game, see control.lua on how to do that (i did it for the gui, since script.on_load cannot access the game functions), namespace is optional:
+to initialize call the following in the first tick of the game, see control.lua on how to do that, namespace is optional:
 closure = pClosure.new(namespace) 
 
 to add a function:
-closure.add(someFunc)
+
+closure.someFunc = someFunc
 
 to call the function:
+
 closure.someFunc(arg1,arg2,...)
 
 to delete the function:
+
 closure.someFunc = nil
 
 to update the upvalues if you changed them in the function and want them to be saved:
+
 closure.someFunc = closure.someFunc
+
 yes the above line actually works, there will be warnings that can be turned off 
 
 to turn off warnings
@@ -69,11 +74,12 @@ see control.lua
 
 --]]
 
+
+-- funcCache = {} this table stores the fNames of the functions that have been called this session
+
+-- pClosureData.namespace = {} where the functions and upvalues are stored, will point to global table
+
 local pClosure = {} --module table
-
--- funcCache = {} this table stores the fNames of the functions that have already been called this session, so they will not need their upvalues reset, to speed up later calls, it is automatically discarded by the game every save/load since it is not in global
-
--- pClosureData = {} where the functions and upvalues are stored, will point to global table
 
 pClosure.printMessages = true --set this to false to suppress warnings
 
@@ -85,60 +91,88 @@ local function print(str,trace)
 	end
 end
 
+function pClosure.init()
+	if not global.pClosureData then return end
+	for k,t in pairs(global.pClosureData) do
+		local _proxy = t._proxy
+		if _proxy then 
+			_proxy.funcCache = {}
+			setmetatable(_proxy,pClosure)
+		end
+	end		
+end
+
 function pClosure.new (namespace)
-	local t = {}
 	if not global then error("error: global is not available, you should call pClosure.new() in on_load \r\n" .. debug.traceback() ) 
 	end
-	global.pClosure = pClosure --this is for calling a closure within a closure, because meta table data is lost on load
 	global.pClosureData = global.pClosureData or {}
 	if not namespace then namespace = "global" end
 	global.pClosureData[namespace] = global.pClosureData[namespace] or {}
-	t.pClosureData = global.pClosureData[namespace]
-	t.funcCache = {}
-	setmetatable(t,pClosure)
-	return t
+	-- this is where the functions and upvalues are stored
+	global.pClosureData[namespace]._proxy = global.pClosureData[namespace]._proxy or {}
+	-- _proxy is also stored in global so it is not lost
+	local _proxy = global.pClosureData[namespace]._proxy
+	_proxy.funcCache = _proxy.funcCache or {}
+	_proxy.namespace = namespace 
+	_proxy._pClosureProxy = true
+	-- _proxy is mostly empty so that everything goes to the metamethods
+	setmetatable(_proxy,pClosure)
+	return _proxy
 end
 
 pClosure.__index = function (t,fName)
-	local funcData = t.pClosureData[fName]
+	local funcData = global.pClosureData[t.namespace][fName]
 	if not funcData then print("error: function not found", true) return end
 	local func = funcData.func
 	if t.funcCache[fName] then 
-		--function has already been called this session so upvalues don't need loading, enable the print below to see when the function is being called from cache, cache calls are faster, only the first call of a function after a save/load is not a cache call
+		--function already called this session so no need to load
 		--print("calling from cache") 
 		return func 
-	end 
+	end --]]
 	--print("not calling from cache") 
 	--restore the upvalues
 	local upvals = funcData.upvals or {}
+	local ENVindex = funcData.ENVindex
 	for i, value in ipairs(upvals) do
-		if i ~= 1 then debug.setupvalue(func, i, value) end --Skip _ENV
+		if ENVindex and i == ENVindex then 
+			debug.setupvalue(func, i, _G) 
+		else 
+			debug.setupvalue(func, i, value) 
+		end --Skip _ENV
+
 	end
-	debug.setupvalue(func, 1, _G) --set the _ENV to _G since _G changes across sessions
+	
 	t.funcCache[fName] = true
 	return func
 end
     
 pClosure.__newindex = function (t,fName,func)
+	local funcNamespace = global.pClosureData[t.namespace]
 	if func == nil then
-		t.pClosureData[fName] = nil
+		funcNamespace[fName] = nil
 		t.funcCache[fName] = nil
 		return
 	end
-	if t.pClosureData[fName] then
-		print("Warning: you are attempting to overwrite a function, if you really want to you should set it to nil first to prevent this warning", true)
+	if funcNamespace[fName] then
+		print("Warning: attempting to overwrite a function, to prevent this warning set it to nil first", true)
 	end
 	local i = 1
 	local upvals = {}
-	upvals[1] = {}
-	i = 2 --skip the first upvalue _ENV since it will change across sessions
+	local ENVindex = false
+	--skip upvalue _ENV since it will change across sessions
 	while true do
 		local name, value = debug.getupvalue(func, i)
 		if not name then break end
-		upvals[i] = value
+		if name == "_ENV" then
+			print ("skipping _ENV for " .. fName)
+			upvals[i] = {}
+			ENVindex = i
+		else
+			upvals[i] = value
+		end
 		i = i + 1
 	end
-	t.pClosureData[fName] = {func = func,upvals = upvals}
+	funcNamespace[fName] = {func = func,upvals = upvals, ENVindex = ENVindex}
 	t.funcCache[fName] = true
 end
 
